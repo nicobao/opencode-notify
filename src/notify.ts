@@ -28,6 +28,7 @@ import detectTerminal from "detect-terminal"
 // @ts-expect-error - installed at runtime by OCX
 import notifier from "node-notifier"
 import type { OpencodeClient } from "./kdco-primitives/types"
+import { withTimeout } from "./kdco-primitives/with-timeout"
 import { sendNotificationWithFallback } from "./notify/backend"
 import { canUseCmuxNotification, sendCmuxNotification } from "./notify/cmux"
 
@@ -57,6 +58,7 @@ interface TerminalInfo {
 	processName: string | null
 	kittyWindowID: string | null
 	kittyListenOn: string | null
+	kittyRemoteControlAvailable: boolean
 }
 
 interface KittyWindowEntry {
@@ -173,6 +175,7 @@ async function detectTerminalInfo(config: NotifyConfig): Promise<TerminalInfo> {
 			processName: null,
 			kittyWindowID: null,
 			kittyListenOn: null,
+			kittyRemoteControlAvailable: false,
 		}
 	}
 
@@ -182,13 +185,18 @@ async function detectTerminalInfo(config: NotifyConfig): Promise<TerminalInfo> {
 	// Dynamically get bundle ID from macOS (no hardcoding!)
 	const bundleId = await getBundleId(processName)
 
-	return {
+	const terminalInfo: TerminalInfo = {
 		name: terminalName,
 		bundleId,
 		processName,
 		kittyWindowID: toNonEmptyString(process.env.KITTY_WINDOW_ID),
 		kittyListenOn: toNonEmptyString(process.env.KITTY_LISTEN_ON),
+		kittyRemoteControlAvailable: false,
 	}
+
+	terminalInfo.kittyRemoteControlAvailable = await canUseKittyRemoteControl(terminalInfo)
+
+	return terminalInfo
 }
 
 async function isTerminalFocused(terminalInfo: TerminalInfo): Promise<boolean> {
@@ -204,6 +212,12 @@ async function isTerminalFocused(terminalInfo: TerminalInfo): Promise<boolean> {
 		return kittyWindowFocused
 	}
 
+	// If we cannot query Kitty's window state, prefer notifying rather than
+	// suppressing notifications for every frontmost Kitty window.
+	if (terminalInfo.name?.toLowerCase() === "kitty" && terminalInfo.kittyWindowID) {
+		return false
+	}
+
 	return true
 }
 
@@ -213,33 +227,58 @@ function buildKittyLsArgs(terminalInfo: TerminalInfo): string[] {
 		args.push("--to", terminalInfo.kittyListenOn)
 	}
 
-	args.push("ls", "--self")
+	args.push("ls")
 	return args
 }
 
-async function isKittyWindowFocused(terminalInfo: TerminalInfo): Promise<boolean | null> {
-	if (!terminalInfo.kittyWindowID) return null
+async function canUseKittyRemoteControl(terminalInfo: TerminalInfo): Promise<boolean> {
+	if (!terminalInfo.kittyWindowID || !terminalInfo.kittyListenOn) return false
 
 	try {
 		const proc = Bun.spawn(["kitty", ...buildKittyLsArgs(terminalInfo)], {
+			stdin: "ignore",
+			stdout: "ignore",
+			stderr: "ignore",
+		})
+		return (await proc.exited) === 0
+	} catch {
+		return false
+	}
+}
+
+async function isKittyWindowFocused(terminalInfo: TerminalInfo): Promise<boolean | null> {
+	if (!terminalInfo.kittyWindowID || !terminalInfo.kittyRemoteControlAvailable) return null
+
+	let proc: ReturnType<typeof Bun.spawn> | null = null
+	try {
+		proc = Bun.spawn(["kitty", ...buildKittyLsArgs(terminalInfo)], {
+			stdin: "ignore",
 			stdout: "pipe",
 			stderr: "ignore",
 		})
-		const output = await new Response(proc.stdout).text()
-		const exitCode = await proc.exited
+		const [output, exitCode] = await withTimeout(
+			Promise.all([new Response(proc.stdout).text(), proc.exited]),
+			250,
+			"Kitty focus query timed out",
+		)
 		if (exitCode !== 0 || !output.trim()) return null
 
 		const osWindows = JSON.parse(output) as KittyOSWindowEntry[]
 		for (const osWindow of osWindows) {
 			for (const tab of osWindow.tabs ?? []) {
 				for (const window of tab.windows ?? []) {
-					if (window.is_self || String(window.id) === terminalInfo.kittyWindowID) {
+					if (String(window.id) === terminalInfo.kittyWindowID) {
 						return window.is_focused === true
 					}
 				}
 			}
 		}
 	} catch {
+		try {
+			proc?.kill()
+		} catch {
+			// Ignore cleanup failures.
+		}
 		return null
 	}
 
@@ -389,8 +428,18 @@ function buildPermissionEventDedupeKey(properties: unknown): string | null {
 	return `permission:request:${normalizedRequestID}`
 }
 
+function shouldUseKittySocketRemoteControl(terminalInfo: TerminalInfo): boolean {
+	return process.platform === "darwin" && terminalInfo.kittyRemoteControlAvailable
+}
+
 function shouldUseKittyClickFocus(terminalInfo: TerminalInfo): boolean {
-	return process.platform === "darwin" && !!terminalInfo.kittyWindowID
+	// Click-to-focus runs only after the user activates a notification, so it can
+	// safely use Kitty's controlling-terminal fallback when no socket is exposed.
+	return (
+		process.platform === "darwin" &&
+		terminalInfo.name?.toLowerCase() === "kitty" &&
+		Boolean(terminalInfo.kittyWindowID)
+	)
 }
 
 function buildKittyFocusArgs(terminalInfo: TerminalInfo): string[] | null {
@@ -401,7 +450,7 @@ function buildKittyFocusArgs(terminalInfo: TerminalInfo): string[] | null {
 		args.push("--to", terminalInfo.kittyListenOn)
 	}
 
-	args.push("focus-window", "--match", `id:${terminalInfo.kittyWindowID}`)
+	args.push("focus-window", "--no-response", "--match", `id:${terminalInfo.kittyWindowID}`)
 	return args
 }
 
@@ -411,6 +460,7 @@ async function focusKittyWindow(terminalInfo: TerminalInfo): Promise<void> {
 
 	try {
 		const proc = Bun.spawn(["kitty", ...args], {
+			stdin: "ignore",
 			stdout: "ignore",
 			stderr: "ignore",
 		})
@@ -442,7 +492,10 @@ function sendNodeNotification(options: NotificationOptions): void {
 		notifier.notify(
 			notifyOptions,
 			(error: unknown, response: unknown) => {
-				if (error || response !== "activate") return
+				const normalizedResponse =
+					typeof response === "string" ? response.toLowerCase() : String(response).toLowerCase()
+				void error
+				if (normalizedResponse !== "click" && normalizedResponse !== "activate") return
 				void focusKittyWindow(terminalInfo)
 			},
 		)
@@ -578,8 +631,10 @@ async function handleQuestionAsked(
 	terminalInfo: TerminalInfo,
 	notificationRuntime: NotificationRuntime,
 ): Promise<void> {
-	// Guard: quiet hours only (no focus check for questions - tmux workflow)
+	// Guard: quiet hours only
 	if (isQuietHours(config)) return
+
+	if (await isTerminalFocused(terminalInfo)) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
 
@@ -607,7 +662,7 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 	// Detect terminal once at startup (cached for performance)
 	const terminalInfo = await detectTerminalInfo(config)
 	const notificationRuntime: NotificationRuntime = {
-		preferCmux: canUseCmuxNotification() && !shouldUseKittyClickFocus(terminalInfo),
+		preferCmux: canUseCmuxNotification() && !shouldUseKittySocketRemoteControl(terminalInfo),
 	}
 	const recentQuestionNotifications: RecentNotifications = new Map()
 	const recentReadyNotifications: RecentNotifications = new Map()
