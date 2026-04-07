@@ -330,6 +330,26 @@ async function isParentSession(client: OpencodeClient, sessionID: string): Promi
 	}
 }
 
+async function getSessionTitle(
+	client: OpencodeClient,
+	sessionID: string | null | undefined,
+	fallback: string,
+): Promise<string> {
+	const normalizedSessionID = toNonEmptyString(sessionID)
+	if (!normalizedSessionID) return fallback
+
+	try {
+		const session = await client.session.get({ path: { id: normalizedSessionID } })
+		if (session.data?.title) {
+			return session.data.title.slice(0, 80)
+		}
+	} catch {
+		// Use the fallback text when session lookup fails.
+	}
+
+	return fallback
+}
+
 // ==========================================
 // NOTIFICATION SENDER
 // ==========================================
@@ -550,16 +570,7 @@ async function handleSessionIdle(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
-	// Get session info for context
-	let sessionTitle = "Task"
-	try {
-		const session = await client.session.get({ path: { id: sessionID } })
-		if (session.data?.title) {
-			sessionTitle = session.data.title.slice(0, 50)
-		}
-	} catch {
-		// Use default title
-	}
+	const sessionTitle = await getSessionTitle(client, sessionID, "Task")
 
 	await sendNotification(
 		{
@@ -608,6 +619,8 @@ async function handleSessionError(
 }
 
 async function handlePermissionUpdated(
+	client: OpencodeClient,
+	sessionID: string | null | undefined,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
 	notificationRuntime: NotificationRuntime,
@@ -621,10 +634,12 @@ async function handlePermissionUpdated(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
+	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input")
+
 	await sendNotification(
 		{
 			title: "Waiting for you",
-			message: "OpenCode needs your input",
+			message: sessionTitle,
 			sound: config.sounds.permission,
 			terminalInfo,
 		},
@@ -633,6 +648,8 @@ async function handlePermissionUpdated(
 }
 
 async function handleQuestionAsked(
+	client: OpencodeClient,
+	sessionID: string | null | undefined,
 	config: NotifyConfig,
 	terminalInfo: TerminalInfo,
 	notificationRuntime: NotificationRuntime,
@@ -643,11 +660,12 @@ async function handleQuestionAsked(
 	if (await isTerminalFocused(terminalInfo)) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
+	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input")
 
 	await sendNotification(
 		{
 			title: "Question for you",
-			message: "OpenCode needs your input",
+			message: sessionTitle,
 			sound,
 			terminalInfo,
 		},
@@ -674,7 +692,10 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 	const recentReadyNotifications: RecentNotifications = new Map()
 	const recentPermissionNotifications: RecentNotifications = new Map()
 
-	const notifyQuestionIfNeeded = async (dedupeKey: string | null): Promise<void> => {
+	const notifyQuestionIfNeeded = async (
+		sessionID: string | null | undefined,
+		dedupeKey: string | null,
+	): Promise<void> => {
 		if (
 			dedupeKey &&
 			!shouldSendDedupedNotification(
@@ -686,7 +707,13 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 			return
 		}
 
-		await handleQuestionAsked(config, terminalInfo, notificationRuntime)
+		await handleQuestionAsked(
+			client as OpencodeClient,
+			sessionID,
+			config,
+			terminalInfo,
+			notificationRuntime,
+		)
 	}
 
 	const notifySessionReadyIfNeeded = async (sessionID: unknown): Promise<void> => {
@@ -713,6 +740,10 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 
 	const notifyPermissionIfNeeded = async (properties: unknown): Promise<void> => {
 		const dedupeKey = buildPermissionEventDedupeKey(properties)
+		const sessionID =
+			properties && typeof properties === "object"
+				? toNonEmptyString((properties as Record<string, unknown>).sessionID)
+				: null
 
 		if (
 			dedupeKey &&
@@ -725,13 +756,22 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 			return
 		}
 
-		await handlePermissionUpdated(config, terminalInfo, notificationRuntime)
+		await handlePermissionUpdated(
+			client as OpencodeClient,
+			sessionID,
+			config,
+			terminalInfo,
+			notificationRuntime,
+		)
 	}
 
 	return {
 		"tool.execute.before": async (input: { tool: string; sessionID: string; callID: string }) => {
 			if (input.tool === "question") {
-				await notifyQuestionIfNeeded(buildQuestionToolDedupeKey(input.sessionID, input.callID))
+				await notifyQuestionIfNeeded(
+					input.sessionID,
+					buildQuestionToolDedupeKey(input.sessionID, input.callID),
+				)
 			}
 		},
 		event: async ({ event }: { event: Event }): Promise<void> => {
@@ -778,7 +818,7 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 				}
 				case "question.asked": {
 					const dedupeKey = buildQuestionEventDedupeKey(runtimeEvent.properties)
-					await notifyQuestionIfNeeded(dedupeKey)
+					await notifyQuestionIfNeeded(runtimeEvent.properties.sessionID, dedupeKey)
 					break
 				}
 			}
