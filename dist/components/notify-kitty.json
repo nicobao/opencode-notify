@@ -4,7 +4,7 @@
     "1.0.0": {
       "name": "notify-kitty",
       "type": "plugin",
-      "description": "Native desktop notifications with terminal detection, Kitty-aware focus, and focus awareness",
+      "description": "Native desktop notifications with terminal detection, Kitty-aware focus, same-tab suppression, and click-back restore",
       "files": [
         {
           "path": "src/notify.ts",
