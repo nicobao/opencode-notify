@@ -460,12 +460,16 @@ function shouldUseKittySocketRemoteControl(terminalInfo: TerminalInfo): boolean 
 	return process.platform === "darwin" && terminalInfo.kittyRemoteControlAvailable
 }
 
+function isKittyTerminal(terminalInfo: TerminalInfo): boolean {
+	return terminalInfo.name?.toLowerCase() === "kitty"
+}
+
 function shouldUseKittyClickFocus(terminalInfo: TerminalInfo): boolean {
 	// Click-to-focus runs only after the user activates a notification, so it can
 	// safely use Kitty's controlling-terminal fallback when no socket is exposed.
 	return (
 		process.platform === "darwin" &&
-		terminalInfo.name?.toLowerCase() === "kitty" &&
+		isKittyTerminal(terminalInfo) &&
 		Boolean(terminalInfo.kittyWindowID)
 	)
 }
@@ -636,14 +640,16 @@ async function handlePermissionUpdated(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
-	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input", {
-		prefix: "OC | ",
-	})
+	const message = isKittyTerminal(terminalInfo)
+		? await getSessionTitle(client, sessionID, "OpenCode needs your input", {
+				prefix: "OC | ",
+			})
+		: "OpenCode needs your input"
 
 	await sendNotification(
 		{
 			title: "Waiting for you",
-			message: sessionTitle,
+			message,
 			sound: config.sounds.permission,
 			terminalInfo,
 		},
@@ -661,17 +667,19 @@ async function handleQuestionAsked(
 	// Guard: quiet hours only
 	if (isQuietHours(config)) return
 
-	if (await isTerminalFocused(terminalInfo)) return
+	if (isKittyTerminal(terminalInfo) && (await isTerminalFocused(terminalInfo))) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
-	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input", {
-		prefix: "OC | ",
-	})
+	const message = isKittyTerminal(terminalInfo)
+		? await getSessionTitle(client, sessionID, "OpenCode needs your input", {
+				prefix: "OC | ",
+			})
+		: "OpenCode needs your input"
 
 	await sendNotification(
 		{
 			title: "Question for you",
-			message: sessionTitle,
+			message,
 			sound,
 			terminalInfo,
 		},
