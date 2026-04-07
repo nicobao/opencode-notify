@@ -1,15 +1,10 @@
 {
-  "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
-  "name": "nicobao",
-  "version": "0.1.0",
-  "author": "nicobao",
-  "description": "Native OS notifications for OpenCode - know when tasks complete",
-  "components": [
-    {
+  "name": "notify-kitty",
+  "versions": {
+    "1.0.0": {
       "name": "notify-kitty",
-      "description": "Native desktop notifications with terminal detection, Kitty-aware focus, and focus awareness",
       "type": "plugin",
-      "npmDependencies": ["node-notifier", "detect-terminal"],
+      "description": "Native desktop notifications with terminal detection, Kitty-aware focus, and focus awareness",
       "files": [
         {
           "path": "src/notify.ts",
@@ -31,7 +26,15 @@
           "path": "src/kdco-primitives/with-timeout.ts",
           "target": "plugins/kdco-primitives/with-timeout.ts"
         }
+      ],
+      "dependencies": [],
+      "npmDependencies": [
+        "node-notifier",
+        "detect-terminal"
       ]
     }
-  ]
+  },
+  "dist-tags": {
+    "latest": "1.0.0"
+  }
 }
