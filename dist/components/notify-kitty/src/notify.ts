@@ -238,7 +238,7 @@ function buildKittyLsArgs(terminalInfo: TerminalInfo): string[] {
 }
 
 async function canUseKittyRemoteControl(terminalInfo: TerminalInfo): Promise<boolean> {
-	if (!terminalInfo.kittyWindowID || !terminalInfo.kittyListenOn) return false
+	if (!terminalInfo.kittyWindowID) return false
 
 	try {
 		const proc = Bun.spawn(["kitty", ...buildKittyLsArgs(terminalInfo)], {
@@ -465,11 +465,13 @@ function isKittyTerminal(terminalInfo: TerminalInfo): boolean {
 }
 
 function shouldUseKittyClickFocus(terminalInfo: TerminalInfo): boolean {
-	// Click-to-focus runs only after the user activates a notification, so it can
-	// safely use Kitty's controlling-terminal fallback when no socket is exposed.
+	// Only opt into the callback-based click-to-focus path when Kitty remote control
+	// is actually available. The generic notification path is more reliable when the
+	// current shell only exposes KITTY_WINDOW_ID.
 	return (
 		process.platform === "darwin" &&
 		isKittyTerminal(terminalInfo) &&
+		terminalInfo.kittyRemoteControlAvailable &&
 		Boolean(terminalInfo.kittyWindowID)
 	)
 }
@@ -517,8 +519,6 @@ function sendNodeNotification(options: NotificationOptions): void {
 		notifyOptions.activate = terminalInfo.bundleId
 	}
 
-	// When running inside Kitty on macOS, a click should restore the exact Kitty window,
-	// not just bring the Kitty app to the foreground.
 	if (shouldUseKittyClickFocus(terminalInfo)) {
 		notifyOptions.wait = true
 		notifier.notify(
@@ -666,8 +666,6 @@ async function handleQuestionAsked(
 ): Promise<void> {
 	// Guard: quiet hours only
 	if (isQuietHours(config)) return
-
-	if (isKittyTerminal(terminalInfo) && (await isTerminalFocused(terminalInfo))) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
 	const message = isKittyTerminal(terminalInfo)
