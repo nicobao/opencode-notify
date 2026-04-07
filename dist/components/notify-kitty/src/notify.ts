@@ -476,6 +476,14 @@ function shouldUseKittyClickFocus(terminalInfo: TerminalInfo): boolean {
 	)
 }
 
+function shouldUseMacOSNotificationClickFocus(terminalInfo: TerminalInfo): boolean {
+	return process.platform === "darwin" && Boolean(terminalInfo.bundleId)
+}
+
+function escapeAppleScriptString(value: string): string {
+	return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')
+}
+
 function buildKittyFocusArgs(terminalInfo: TerminalInfo): string[] | null {
 	if (!terminalInfo.kittyWindowID) return null
 
@@ -504,6 +512,54 @@ async function focusKittyWindow(terminalInfo: TerminalInfo): Promise<void> {
 	}
 }
 
+async function focusTerminalApplication(terminalInfo: TerminalInfo): Promise<void> {
+	if (process.platform !== "darwin") return
+	if (!terminalInfo.bundleId && !terminalInfo.processName) return
+
+	const lines: string[] = []
+
+	if (terminalInfo.bundleId) {
+		const bundleID = escapeAppleScriptString(terminalInfo.bundleId)
+		lines.push(`tell application id "${bundleID}" to reopen`)
+	}
+
+	if (terminalInfo.processName) {
+		const processName = escapeAppleScriptString(terminalInfo.processName)
+		lines.push(
+			'tell application "System Events"',
+			`\ttell process "${processName}"`,
+			"\t\trepeat with currentWindow in windows",
+			"\t\t\ttry",
+			'\t\t\t\tset value of attribute "AXMinimized" of currentWindow to false',
+			"\t\t\tend try",
+			"\t\tend repeat",
+			"\t\tset frontmost to true",
+			"\tend tell",
+			"end tell",
+		)
+	}
+
+	if (terminalInfo.bundleId) {
+		const bundleID = escapeAppleScriptString(terminalInfo.bundleId)
+		lines.push(`tell application id "${bundleID}" to activate`)
+	}
+
+	if (!lines.length) return
+	await runOsascript(lines.join("\n"))
+}
+
+async function focusTerminalFromNotification(terminalInfo: TerminalInfo): Promise<void> {
+	await focusTerminalApplication(terminalInfo)
+
+	if (shouldUseKittyClickFocus(terminalInfo)) {
+		await focusKittyWindow(terminalInfo)
+	}
+
+	if (terminalInfo.bundleId) {
+		await focusTerminalApplication(terminalInfo)
+	}
+}
+
 function sendNodeNotification(options: NotificationOptions): void {
 	const { title, message, sound, terminalInfo } = options
 
@@ -519,7 +575,7 @@ function sendNodeNotification(options: NotificationOptions): void {
 		notifyOptions.activate = terminalInfo.bundleId
 	}
 
-	if (shouldUseKittyClickFocus(terminalInfo)) {
+	if (shouldUseMacOSNotificationClickFocus(terminalInfo)) {
 		notifyOptions.wait = true
 		notifier.notify(
 			notifyOptions,
@@ -528,7 +584,7 @@ function sendNodeNotification(options: NotificationOptions): void {
 					typeof response === "string" ? response.toLowerCase() : String(response).toLowerCase()
 				void error
 				if (normalizedResponse !== "click" && normalizedResponse !== "activate") return
-				void focusKittyWindow(terminalInfo)
+				void focusTerminalFromNotification(terminalInfo)
 			},
 		)
 		return
