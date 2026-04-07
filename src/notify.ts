@@ -334,6 +334,7 @@ async function getSessionTitle(
 	client: OpencodeClient,
 	sessionID: string | null | undefined,
 	fallback: string,
+	options?: { prefix?: string },
 ): Promise<string> {
 	const normalizedSessionID = toNonEmptyString(sessionID)
 	if (!normalizedSessionID) return fallback
@@ -341,7 +342,8 @@ async function getSessionTitle(
 	try {
 		const session = await client.session.get({ path: { id: normalizedSessionID } })
 		if (session.data?.title) {
-			return session.data.title.slice(0, 80)
+			const title = session.data.title.slice(0, 80)
+			return options?.prefix ? `${options.prefix}${title}` : title
 		}
 	} catch {
 		// Use the fallback text when session lookup fails.
@@ -634,7 +636,9 @@ async function handlePermissionUpdated(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
-	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input")
+	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input", {
+		prefix: "OC | ",
+	})
 
 	await sendNotification(
 		{
@@ -660,7 +664,9 @@ async function handleQuestionAsked(
 	if (await isTerminalFocused(terminalInfo)) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
-	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input")
+	const sessionTitle = await getSessionTitle(client, sessionID, "OpenCode needs your input", {
+		prefix: "OC | ",
+	})
 
 	await sendNotification(
 		{
