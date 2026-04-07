@@ -68,10 +68,16 @@ interface KittyWindowEntry {
 }
 
 interface KittyTabEntry {
+	id?: number
+	is_active?: boolean
+	is_focused?: boolean
 	windows?: KittyWindowEntry[]
 }
 
 interface KittyOSWindowEntry {
+	id?: number
+	is_active?: boolean
+	is_focused?: boolean
 	tabs?: KittyTabEntry[]
 }
 
@@ -268,7 +274,7 @@ async function isKittyWindowFocused(terminalInfo: TerminalInfo): Promise<boolean
 			for (const tab of osWindow.tabs ?? []) {
 				for (const window of tab.windows ?? []) {
 					if (String(window.id) === terminalInfo.kittyWindowID) {
-						return window.is_focused === true
+						return osWindow.is_focused === true && tab.is_focused === true
 					}
 				}
 			}
