@@ -553,6 +553,7 @@ async function focusTerminalFromNotification(terminalInfo: TerminalInfo): Promis
 
 	if (shouldUseKittyClickFocus(terminalInfo)) {
 		await focusKittyWindow(terminalInfo)
+		return
 	}
 
 	if (terminalInfo.bundleId) {
@@ -571,7 +572,11 @@ function sendNodeNotification(options: NotificationOptions): void {
 	}
 
 	// macOS-specific: click notification to focus terminal
-	if (process.platform === "darwin" && terminalInfo.bundleId) {
+	if (
+		process.platform === "darwin" &&
+		terminalInfo.bundleId &&
+		!shouldUseKittyClickFocus(terminalInfo)
+	) {
 		notifyOptions.activate = terminalInfo.bundleId
 	}
 
@@ -696,11 +701,9 @@ async function handlePermissionUpdated(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
-	const message = isKittyTerminal(terminalInfo)
-		? await getSessionTitle(client, sessionID, "OpenCode needs your input", {
-				prefix: "OC | ",
-			})
-		: "OpenCode needs your input"
+	const message = await getSessionTitle(client, sessionID, "OC | OpenCode needs your input", {
+		prefix: "OC | ",
+	})
 
 	await sendNotification(
 		{
@@ -724,11 +727,9 @@ async function handleQuestionAsked(
 	if (isQuietHours(config)) return
 
 	const sound = config.sounds.question ?? config.sounds.permission
-	const message = isKittyTerminal(terminalInfo)
-		? await getSessionTitle(client, sessionID, "OpenCode needs your input", {
-				prefix: "OC | ",
-			})
-		: "OpenCode needs your input"
+	const message = await getSessionTitle(client, sessionID, "OC | OpenCode needs your input", {
+		prefix: "OC | ",
+	})
 
 	await sendNotification(
 		{
