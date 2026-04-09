@@ -1,7 +1,7 @@
 {
   "$schema": "https://ocx.kdco.dev/schemas/v2/registry.json",
   "name": "nicobao",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "author": "nicobao",
   "components": [
     {

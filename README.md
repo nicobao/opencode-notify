@@ -18,16 +18,10 @@ This plugin solves that:
 ## Installation
 
 ```bash
-ocx add kdco/notify --from https://registry.kdco.dev
+ocx add -g nicobao/notify-kitty --from https://raw.githubusercontent.com/nicobao/opencode-notify/main
 ```
 
 If you don't have OCX installed, install it from the [OCX repository](https://github.com/kdcokenny/ocx).
-
-**Optional:** Get everything at once with `kdco-workspace`:
-
-```bash
-ocx add kdco/workspace --from https://registry.kdco.dev
-```
 
 ## How It Works
 
@@ -139,7 +133,7 @@ No. Smart defaults prevent noise:
 
 ### Can I disable it temporarily?
 
-This plugin does not currently expose an `enabled` config flag. To disable notifications, remove/uninstall the plugin (for example: `ocx remove kdco/notify`) and add it back when needed.
+This plugin does not currently expose an `enabled` config flag. To disable notifications, remove/uninstall the plugin (for example: `ocx remove nicobao/notify-kitty`) and add it back when needed.
 
 ## Supported Terminals
 
