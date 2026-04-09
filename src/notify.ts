@@ -218,12 +218,7 @@ async function isTerminalFocused(terminalInfo: TerminalInfo): Promise<boolean> {
 		return kittyWindowFocused
 	}
 
-	// If we cannot query Kitty's window state, prefer notifying rather than
-	// suppressing notifications for every frontmost Kitty window.
-	if (terminalInfo.name?.toLowerCase() === "kitty" && terminalInfo.kittyWindowID) {
-		return false
-	}
-
+	// Fall back to app-level suppression when Kitty cannot report the exact window.
 	return true
 }
 
