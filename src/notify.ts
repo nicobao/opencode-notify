@@ -372,6 +372,7 @@ interface NotificationRuntime {
 const QUESTION_DEDUPE_WINDOW_MS = 1500
 const READY_DEDUPE_WINDOW_MS = 1500
 const PERMISSION_DEDUPE_WINDOW_MS = 1500
+const MACOS_NOTIFICATION_CLICK_TIMEOUT_SECONDS = 30
 
 type RecentNotifications = Map<string, number>
 
@@ -382,6 +383,10 @@ function toNonEmptyString(value: unknown): string | null {
 	if (!normalized) return null
 
 	return normalized
+}
+
+function isACPHostedSession(argv: string[] = process.argv): boolean {
+	return argv.slice(1, 3).some((arg) => arg.trim().toLowerCase() === "acp")
 }
 
 function shouldSendDedupedNotification(
@@ -571,17 +576,14 @@ function sendNodeNotification(options: NotificationOptions): void {
 		sound,
 	}
 
-	// macOS-specific: click notification to focus terminal
-	if (
-		process.platform === "darwin" &&
-		terminalInfo.bundleId &&
-		!shouldUseKittyClickFocus(terminalInfo)
-	) {
+	// Keep the app-level activate fallback even when Kitty-specific click focus is enabled.
+	if (process.platform === "darwin" && terminalInfo.bundleId) {
 		notifyOptions.activate = terminalInfo.bundleId
 	}
 
 	if (shouldUseMacOSNotificationClickFocus(terminalInfo)) {
 		notifyOptions.wait = true
+		notifyOptions.timeout = MACOS_NOTIFICATION_CLICK_TIMEOUT_SECONDS
 		notifier.notify(
 			notifyOptions,
 			(error: unknown, response: unknown) => {
@@ -748,6 +750,12 @@ async function handleQuestionAsked(
 
 export const NotifyPlugin: Plugin = async (ctx) => {
 	const { client } = ctx
+
+	// ACP hosts like Tidewave already own the foreground UX, so desktop notifications
+	// from the CLI plugin become noisy and misleading there.
+	if (isACPHostedSession()) {
+		return {}
+	}
 
 	// Load config once at startup
 	const config = await loadConfig()
