@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
   pages: write
   id-token: write
 
@@ -21,6 +21,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Bun
         uses: oven-sh/setup-bun@v2
@@ -31,6 +33,33 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
+
+      - name: Detect manual registry changes
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+        id: registry_changes
+        run: |
+          if git diff --quiet "${{ github.event.before }}" "${{ github.sha }}" -- registry.json; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump registry version
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]' && steps.registry_changes.outputs.changed == 'false'
+        run: node ./scripts/bump-registry-version.mjs
+
+      - name: Commit bumped version
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]' && steps.registry_changes.outputs.changed == 'false'
+        run: |
+          if git diff --quiet -- registry.json; then
+            exit 0
+          fi
+
+          version="$(node -p "JSON.parse(require('node:fs').readFileSync('registry.json', 'utf8')).version")"
+          git add registry.json
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+            commit -m "chore: bump registry version to ${version}"
+          git push
 
       - name: Install OCX
         run: npm install --global ocx
