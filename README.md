@@ -18,7 +18,8 @@ This plugin solves that:
 ## Installation
 
 ```bash
-ocx add -g nicobao/notify-kitty --from https://raw.githubusercontent.com/nicobao/opencode-notify/main
+ocx registry add -g --name nicobao https://nicobao.github.io/opencode-notify
+ocx add -g nicobao/notify-kitty
 ```
 
 If you don't have OCX installed, install it from the [OCX repository](https://github.com/kdcokenny/ocx).
@@ -154,7 +155,7 @@ If you prefer not to use OCX, copy the plugin files into `.opencode/plugins/` an
 **Caveats:**
 - Manually install dependencies (`node-notifier`, `detect-terminal`)
 - Install [cmux](https://www.cmux.dev/) if you want the additional [cmux](https://www.cmux.dev/)-native notification path
-- Updates require manual re-copying
+- Updates require rebuilding the published registry
 
 ## Part of the OCX Ecosystem
 
@@ -167,13 +168,16 @@ This facade is maintained from the main [OCX monorepo](https://github.com/kdcoke
 Generated publish artifacts are not source of truth:
 
 - `src/` contains the source content.
-- `files/` and `dist/` are generated for publishing/install testing.
+- `registry.json` contains the source registry definition.
+- `dist/` is generated for publishing.
 
 To regenerate the publishable output locally from a clean checkout:
 
 ```bash
 ./scripts/build-registry.sh
 ```
+
+GitHub Pages publishes the built registry from `dist/`.
 
 If you want to update opencode-notify itself, start here:
 
