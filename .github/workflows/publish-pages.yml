@@ -94,7 +94,9 @@ jobs:
 
       - name: Read registry version
         id: registry_version
-        run: echo "version=$(node -p \"JSON.parse(require('node:fs').readFileSync('registry.json', 'utf8')).version\")" >> "$GITHUB_OUTPUT"
+        run: |
+          version="$(node -p 'JSON.parse(require("node:fs").readFileSync("registry.json", "utf8")).version')"
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
 
       - name: Install OCX
         run: npm install --global ocx
