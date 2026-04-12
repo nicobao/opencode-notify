@@ -562,13 +562,17 @@ async function focusTerminalFromNotification(terminalInfo: TerminalInfo): Promis
 }
 
 function sendNodeNotification(options: NotificationOptions): void {
-	const { title, message, sound, terminalInfo } = options
+	const { title, message, subtitle, sound, terminalInfo } = options
 
 	// Base notification options
 	const notifyOptions: Record<string, unknown> = {
 		title,
 		message,
 		sound,
+	}
+
+	if (subtitle) {
+		notifyOptions.subtitle = subtitle
 	}
 
 	// Keep the app-level activate fallback even when Kitty-specific click focus is enabled.
@@ -634,7 +638,9 @@ async function handleSessionIdle(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
-	const sessionTitle = await getSessionTitle(client, sessionID, "Task")
+	const sessionTitle = await getSessionTitle(client, sessionID, "OC | Task", {
+		prefix: "OC | ",
+	})
 
 	await sendNotification(
 		{
@@ -669,12 +675,17 @@ async function handleSessionError(
 	// Check if terminal is focused (suppress notification if user is already looking)
 	if (await isTerminalFocused(terminalInfo)) return
 
+	const sessionTitle = await getSessionTitle(client, sessionID, "OC | Task", {
+		prefix: "OC | ",
+	})
 	const errorMessage = error?.slice(0, 100) || "Something went wrong"
 
 	await sendNotification(
 		{
 			title: "Something went wrong",
 			message: errorMessage,
+			subtitle: sessionTitle,
+			cmuxBody: errorMessage,
 			sound: config.sounds.error,
 			terminalInfo,
 		},
