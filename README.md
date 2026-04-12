@@ -17,7 +17,23 @@ This plugin solves that:
 
 ## Installation
 
+Fresh install:
+
 ```bash
+ocx registry add -g --name nicobao https://nicobao.github.io/opencode-notify
+ocx add -g nicobao/notify-kitty
+```
+
+Update an existing install from the `nicobao` registry:
+
+```bash
+ocx update -g --registry nicobao
+```
+
+If you previously installed from `https://raw.githubusercontent.com/nicobao/opencode-notify/main`, switch to GitHub Pages once:
+
+```bash
+ocx remove --force nicobao/notify-kitty
 ocx registry add -g --name nicobao https://nicobao.github.io/opencode-notify
 ocx add -g nicobao/notify-kitty
 ```
