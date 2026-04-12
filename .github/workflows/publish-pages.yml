@@ -18,6 +18,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      registry_changed: ${{ steps.registry_changes.outputs.changed }}
+      registry_version: ${{ steps.registry_version.outputs.version }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -34,8 +37,8 @@ jobs:
         with:
           node-version: 24
 
-      - name: Detect manual registry changes
-        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+      - name: Detect registry changes
+        if: github.event_name == 'push'
         id: registry_changes
         run: |
           if git diff --quiet "${{ github.event.before }}" "${{ github.sha }}" -- registry.json; then
@@ -44,12 +47,40 @@ jobs:
             echo "changed=true" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Decide version bump
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]'
+        id: bump_decision
+        run: |
+          HEAD_COMMIT_MESSAGE="$(git log -1 --format=%B)"
+          shopt -s nocasematch
+
+          if [[ "$HEAD_COMMIT_MESSAGE" == *"[skip bump]"* || "$HEAD_COMMIT_MESSAGE" == *"[skip-bump]"* || "$HEAD_COMMIT_MESSAGE" == *"[no bump]"* || "$HEAD_COMMIT_MESSAGE" == *"[no-bump]"* ]]; then
+            echo "should_bump=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [[ "$HEAD_COMMIT_MESSAGE" == *"[force bump]"* || "$HEAD_COMMIT_MESSAGE" == *"[force-bump]"* || "$HEAD_COMMIT_MESSAGE" == *"[bump]"* ]]; then
+            echo "should_bump=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "${{ steps.registry_changes.outputs.changed }}" = "true" ]; then
+            echo "should_bump=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet "${{ github.event.before }}" "${{ github.sha }}" -- src; then
+            echo "should_bump=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "should_bump=true" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Bump registry version
-        if: github.event_name == 'push' && github.actor != 'github-actions[bot]' && steps.registry_changes.outputs.changed == 'false'
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]' && steps.bump_decision.outputs.should_bump == 'true'
         run: node ./scripts/bump-registry-version.mjs
 
       - name: Commit bumped version
-        if: github.event_name == 'push' && github.actor != 'github-actions[bot]' && steps.registry_changes.outputs.changed == 'false'
+        if: github.event_name == 'push' && github.actor != 'github-actions[bot]' && steps.bump_decision.outputs.should_bump == 'true'
         run: |
           if git diff --quiet -- registry.json; then
             exit 0
@@ -60,6 +91,10 @@ jobs:
           git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
             commit -m "chore: bump registry version to ${version}"
           git push
+
+      - name: Read registry version
+        id: registry_version
+        run: echo "version=$(node -p \"JSON.parse(require('node:fs').readFileSync('registry.json', 'utf8')).version\")" >> "$GITHUB_OUTPUT"
 
       - name: Install OCX
         run: npm install --global ocx
@@ -85,3 +120,29 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
+
+  release:
+    if: github.event_name == 'push' && needs.build.outputs.registry_changed == 'true'
+    needs:
+      - build
+      - deploy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.registry_version }}
+        run: |
+          tag="v${VERSION}"
+
+          if gh release view "$tag" --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            exit 0
+          fi
+
+          gh release create "$tag" \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "notify-kitty ${VERSION}" \
+            --generate-notes

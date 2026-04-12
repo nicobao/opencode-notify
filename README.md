@@ -196,6 +196,8 @@ To regenerate the publishable output locally from a clean checkout:
 
 GitHub Pages publishes the built registry from `dist/`.
 
+Pushes to `main` auto-bump `registry.json` when `src/` changes and create a GitHub release for the bumped version. Use `[skip bump]` or `[no bump]` in the head commit message to suppress the bump, or `[force bump]` / `[bump]` to force one for non-`src/` changes.
+
 If you want to update opencode-notify itself, start here:
 
 - https://github.com/kdcokenny/ocx/blob/main/workers/kdco-registry/files/plugins/notify.ts
