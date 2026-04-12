@@ -31,6 +31,7 @@ import type { OpencodeClient } from "./kdco-primitives/types"
 import { withTimeout } from "./kdco-primitives/with-timeout"
 import { sendNotificationWithFallback } from "./notify/backend"
 import { canUseCmuxNotification, sendCmuxNotification } from "./notify/cmux"
+import { formatSessionTitle } from "./notify/format"
 
 interface NotifyConfig {
 	/** Notify for child/sub-session events (default: false) */
@@ -337,8 +338,7 @@ async function getSessionTitle(
 	try {
 		const session = await client.session.get({ path: { id: normalizedSessionID } })
 		if (session.data?.title) {
-			const title = session.data.title.slice(0, 80)
-			return options?.prefix ? `${options.prefix}${title}` : title
+			return formatSessionTitle(session.data.title, options)
 		}
 	} catch {
 		// Use the fallback text when session lookup fails.
@@ -646,8 +646,6 @@ async function handleSessionIdle(
 		{
 			title: "Ready for review",
 			message: sessionTitle,
-			subtitle: sessionTitle,
-			cmuxBody: "OpenCode task is ready for review",
 			sound: config.sounds.idle,
 			terminalInfo,
 		},
@@ -901,7 +899,8 @@ export const NotifyPlugin: Plugin = async (ctx) => {
 				}
 				case "question.asked": {
 					const dedupeKey = buildQuestionEventDedupeKey(runtimeEvent.properties)
-					await notifyQuestionIfNeeded(runtimeEvent.properties.sessionID, dedupeKey)
+					const sessionID = toNonEmptyString(runtimeEvent.properties.sessionID)
+					await notifyQuestionIfNeeded(sessionID, dedupeKey)
 					break
 				}
 			}
