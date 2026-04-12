@@ -111,7 +111,7 @@ jobs:
         run: ./scripts/build-registry.sh
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v4
+        uses: actions/upload-pages-artifact@v5.0.0
         with:
           path: dist
 
